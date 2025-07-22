@@ -1,0 +1,35 @@
+body {
+  margin: 0;
+  padding: 0;
+  background: #181a1b url("./assets/logokit/fs-bkg-1440.png") center center /
+    cover no-repeat;
+  background-blend-mode: multiply;
+  font-family: "Nunito, Nunito Sans, sans-serif";
+  color: #e0e7ef;
+  transition: background 0.3s, color 0.3s;
+}
+
+html,
+#root {
+  height: 100%;
+  background: transparent;
+  font-family: "Nunito, Nunito Sans, sans-serif";
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
+    monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  background: #e5e7eb;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}

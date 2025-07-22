@@ -1,0 +1,21 @@
+/* Utility classes for modern UI */
+.rounded {
+  border-radius: 16px;
+}
+.shadow {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+.p-4 {
+  padding: 1.5rem;
+}
+.mt-4 {
+  margin-top: 1.5rem;
+}
+.mb-4 {
+  margin-bottom: 1.5rem;
+}
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

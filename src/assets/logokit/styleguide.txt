@@ -1,0 +1,10 @@
+Green: 34AF45
+Green Shadow: #349b42
+Slate: 28292c
+Charcoal: 272b2e
+Light Gray: 42474c
+
+
+Font: Nunito/Nunito Light https://fonts.adobe.com/fonts/nunito
+Site: https://forsynse.com
+

@@ -1,0 +1,21 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 200" width="700" height="200">
+	<title>Forsynse logo_Bold</title>
+	<style>
+		tspan { white-space:pre } 
+		.t0 { font-size: 72px;fill: #28292c;font-weight: 700;font-family: "Nunito-Bold", "Nunito" } 
+		.t1 { font-size: 72px;fill: #34af45;font-weight: 700;font-family: "Nunito-Bold", "Nunito" } 
+		.s2 { fill: #34af45 } 
+		.t3 { font-size: 14px;fill: #ffffff;font-weight: 600;font-family: "Nunito-SemiBold", "Nunito" } 
+	</style>
+	<g id="Layer 1">
+		<text id="ForSynse - normal" style="transform: matrix(2,0,0,2,35.42,139.851)" >
+			<tspan x="0" y="0" class="t0">For</tspan><tspan  y="0" class="t1">S</tspan><tspan  y="0" class="t0">ynse
+</tspan>
+		</text>
+		<path id="&lt;Path&gt;" class="s2" d="m655.5 181.2h-277.3l14-36.1h280.2z"/>
+		<text id="InformationInvolved" style="transform: matrix(2,0,0,2,395.744,172.788)" >
+			<tspan x="0" y="0" class="t3">Informatio</tspan><tspan  y="0" class="t3" dx="0" >n</tspan><tspan  y="0" class="t3">I</tspan><tspan  y="0" class="t3">nvolved
+</tspan>
+		</text>
+	</g>
+</svg>
