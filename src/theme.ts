@@ -22,7 +22,7 @@ export const getTheme = (mode: "light" | "dark" = "dark"): Theme =>
       },
     },
     typography: {
-      fontFamily: "Nunito, Nunito Sans, sans-serif",
+      fontFamily: "Nunito, Nunito Sans, Arial, Roboto, sans-serif",
       fontWeightRegular: 400,
       fontWeightBold: 700,
       h5: { fontWeight: 700, letterSpacing: 0.5 },

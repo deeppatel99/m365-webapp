@@ -4,7 +4,7 @@ body {
   background: #181a1b url("./assets/logokit/fs-bkg-1440.png") center center /
     cover no-repeat;
   background-blend-mode: multiply;
-  font-family: "Nunito, Nunito Sans, sans-serif";
+  font-family: Nunito, Nunito Sans, Arial, Roboto, sans-serif;
   color: #e0e7ef;
   transition: background 0.3s, color 0.3s;
 }
@@ -13,7 +13,7 @@ html,
 #root {
   height: 100%;
   background: transparent;
-  font-family: "Nunito, Nunito Sans, sans-serif";
+  font-family: Nunito, Nunito Sans, Arial, Roboto, sans-serif;
 }
 
 code {
