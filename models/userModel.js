@@ -35,7 +35,27 @@ exports.updateByEmail = async (email, updateObj) => {
   return await updateRecord(usersFile, "email", email, updateObj);
 };
 
+// Increment querycount and lock user if needed
+exports.incrementQueryCount = async (email) => {
+  const user = await exports.findByEmail(email);
+  if (!user) return null;
+  let querycount = parseInt(user.querycount || "0", 10) + 1;
+  let querymax = parseInt(user.querymax || "3", 10);
+  await exports.updateByEmail(email, {
+    querycount,
+  });
+  return { querycount };
+};
+
 // Get all users
 exports.getAll = async () => {
   return await readCSV(usersFile);
+};
+
+// Helper to check if user is locked out
+exports.isUserLocked = (user) => {
+  if (!user) return true;
+  const querycount = parseInt(user.querycount || "0", 10);
+  const querymax = parseInt(user.querymax || "3", 10);
+  return querycount >= querymax;
 };

@@ -1,6 +1,6 @@
 // OTP verification page for users
-import React, { useState, useContext, FormEvent } from "react";
-import { Button, Typography, Box, CircularProgress } from "@mui/material";
+import React, { useState, useContext, FormEvent, useEffect  } from "react";
+import { Button, Typography, Box, CircularProgress, Modal } from "@mui/material";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SnackbarContext } from "../context/SnackbarContext";
 import api from "../utils/api";
@@ -14,10 +14,21 @@ const Verify: React.FC = () => {
   const [otp, setOtp] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [lockoutModal, setLockoutModal] = useState<boolean>(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { showMessage } = useContext(SnackbarContext);
   const email = (location.state as { email?: string })?.email;
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
   // Handle OTP form submission
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -49,14 +60,38 @@ const Verify: React.FC = () => {
       showMessage("OTP verified! Welcome.", "success");
       navigate("/dashboard");
     } catch (err: any) {
-      showMessage(
+      const msg =
         err.response?.data?.error ||
-          err.response?.data?.message ||
-          "OTP verification failed",
-        "error"
-      );
+        err.response?.data?.message ||
+        "OTP verification failed";
+      if (msg.includes("maximum execution limits")) {
+        setLockoutModal(true);
+      }
+      showMessage(msg, "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResendLoading(true);
+    try {
+      await api.post("/send-otp", { email });
+      setResendCooldown(180); // 3 minutes
+      showMessage("OTP resent! Please check your email.", "success");
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        "Failed to resend OTP";
+      if (msg.includes("maximum execution limits")) {
+        setLockoutModal(true);
+      } else if (msg.includes("wait before resending")) {
+        setResendCooldown(180); // Reset cooldown if backend says so
+      }
+      showMessage(msg, "error");
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -149,7 +184,90 @@ const Verify: React.FC = () => {
         >
           {loading ? <CircularProgress size={24} /> : "Verify"}
         </Button>
+        <Button
+          variant="outlined"
+          color="secondary"
+          fullWidth
+          sx={{ mt: 2, borderRadius: 2, fontWeight: 700, fontSize: 16 }}
+          onClick={handleResend}
+          disabled={resendCooldown > 0 || resendLoading}
+        >
+          {resendLoading ? (
+            <CircularProgress size={20} />
+          ) : resendCooldown > 0 ? (
+            `Resend OTP (${resendCooldown}s)`
+          ) : (
+            "Resend OTP"
+          )}
+        </Button>
       </Box>
+      {/* Modal for account lockout */}
+      <Modal
+        open={lockoutModal}
+        onClose={() => setLockoutModal(false)}
+        children={
+          <Box
+            sx={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              bgcolor: "background.paper",
+              borderRadius: 6,
+              boxShadow: 12,
+              p: 7,
+              maxWidth: 540,
+              width: "96vw",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+          >
+            <Typography
+              variant="h4"
+              color="primary"
+              gutterBottom
+              sx={{
+                fontWeight: 800,
+                textAlign: "center",
+                mb: 2,
+                letterSpacing: 0.5,
+              }}
+            >
+              Account Locked
+            </Typography>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                textAlign: "center",
+                mb: 4,
+                fontSize: 20,
+                lineHeight: 1.6,
+                maxWidth: 420,
+              }}
+            >
+              Your account has reached the maximum execution limits.
+              <br />
+              Please reach out to <b>support@forsynse.com</b> for assistance.
+            </Typography>
+            <Button
+              sx={{
+                mt: 1,
+                fontWeight: 700,
+                px: 6,
+                py: 1.5,
+                borderRadius: 4,
+                fontSize: 18,
+              }}
+              variant="contained"
+              color="primary"
+              onClick={() => setLockoutModal(false)}
+            >
+              Close
+            </Button>
+          </Box>
+        }
+      />
     </Box>
   );
 };
