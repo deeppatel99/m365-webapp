@@ -56,6 +56,14 @@ interface InactiveUser {
   lastSignInDateTime: string | null;
 }
 
+interface RoleWithUsers {
+  roleDisplayName: string;
+  users: Array<{
+    userDisplayName: string;
+    userPrincipalName: string;
+  }>;
+}
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [selectedAction, setSelectedAction] = useState("getInactiveUsers");
@@ -150,7 +158,7 @@ const Dashboard: React.FC = () => {
         // Filter enabled roles
         const enabledRoles = roles.value;
 
-        const result: any[] = [];
+        const rolesWithUsers: RoleWithUsers[] = [];
 
         for (const role of enabledRoles) {
           // For each role, get members (users assigned)
@@ -158,17 +166,35 @@ const Dashboard: React.FC = () => {
             `/directoryRoles/${role.id}/members?$select=displayName,userPrincipalName`
           );
 
-          for (const user of membersRes.value) {
-            result.push({
-              roleDisplayName: role.displayName,
-              userDisplayName: user.displayName,
-              userPrincipalName: user.userPrincipalName,
-            });
+          // Filter out users with blank/null UPN and only add roles that have valid users
+          if (membersRes.value && membersRes.value.length > 0) {
+            const users = membersRes.value
+              .filter(
+                (user: any) =>
+                  user.userPrincipalName && user.userPrincipalName.trim() !== ""
+              )
+              .map((user: any) => ({
+                userDisplayName: user.displayName,
+                userPrincipalName: user.userPrincipalName,
+              }));
+
+            // Only add the role if it has users with valid UPNs
+            if (users.length > 0) {
+              rolesWithUsers.push({
+                roleDisplayName: role.displayName,
+                users: users,
+              });
+            }
           }
         }
 
-        setResponseData({ value: result });
-        setResponse(JSON.stringify({ value: result }, null, 2));
+        // Sort roles by name for better organization
+        rolesWithUsers.sort((a, b) =>
+          a.roleDisplayName.localeCompare(b.roleDisplayName)
+        );
+
+        setResponseData({ value: rolesWithUsers });
+        setResponse(JSON.stringify({ value: rolesWithUsers }, null, 2));
         showMessage(
           <span>
             <CheckCircleIcon
@@ -204,7 +230,23 @@ const Dashboard: React.FC = () => {
     let blob, fileExtension;
     if (exportFormat === "csv") {
       const data = responseData.value || [];
-      const csvData = convertToCSV(data);
+      let csvData;
+
+      // Handle different data structures for CSV export
+      if (selectedAction === "getAdminRolesWithUsers") {
+        // Flatten the grouped data for CSV export
+        const flattenedData = data.flatMap((role: RoleWithUsers) =>
+          role.users.map((user) => ({
+            roleDisplayName: role.roleDisplayName,
+            userDisplayName: user.userDisplayName,
+            userPrincipalName: user.userPrincipalName,
+          }))
+        );
+        csvData = convertToCSV(flattenedData);
+      } else {
+        csvData = convertToCSV(data);
+      }
+
       blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
       fileExtension = "csv";
     } else {
@@ -216,7 +258,11 @@ const Dashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${selectedAction === "getAdminRolesWithUsers" ? "AdminRolesUsers" : "InactiveUsers"}.${fileExtension}`;
+    link.download = `${
+      selectedAction === "getAdminRolesWithUsers"
+        ? "AdminRolesUsers"
+        : "InactiveUsers"
+    }.${fileExtension}`;
     link.click();
     URL.revokeObjectURL(url);
     setExporting(false);
