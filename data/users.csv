@@ -1,3 +1,3 @@
-id,first_name,last_name,company,email,domain,created_at,querycount,querymax,verified,userLocked
-0492b284-59e9-41cb-bb8e-6ed388853447,Deep,Patel,Test,deeppatel7521@gmail.com,gmail.com,2025-07-21T19:06:30.398Z,0,3,true,false
-6f3ebcfa-7dae-45b1-af74-e0973a9d1606,Seth,Earby,ForSynse,searby@forsynse.com,forsynse.com,2025-07-22T12:28:22.239Z,0,3,true,false
+id,firstName,lastName,company,email,domain,createdAt,queryCount,queryMax,verified
+6f3ebcfa-7dae-45b1-af74-e0973a9d1606,Seth,Earby,ForSynse,searby@forsynse.com,forsynse.com,2025-07-22T12:28:22.239Z,0,3,true
+dc42ccb0-5a84-43b8-8531-b09a2eb2edff,Deep,Patel,Test,deeppatel7521@gmail.com,gmail.com,2025-07-23T17:48:09.498Z,0,3,true

@@ -17,6 +17,10 @@ app.use(bodyParser.json()); // Parse incoming JSON requests
 // Mount authentication routes under /api
 app.use("/api", authRoutes);
 
+// Global error handler (should be after all routes)
+const errorHandler = require("./middlewares/errorHandler");
+app.use(errorHandler);
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

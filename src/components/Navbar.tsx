@@ -17,40 +17,43 @@ import {
 import MenuIcon from "@mui/icons-material/Menu";
 import { useNavigate, useLocation } from "react-router-dom";
 import logo from "../assets/logokit/Forsynse logo_Bold_white.png";
-import { Brightness4, Brightness7 } from "@mui/icons-material";
 import api from "../utils/api";
-// Remove ColorModeContext import and any usage
+import {
+  getUser,
+  setUser,
+  removeUser,
+  isAuthenticated,
+  setAuthenticated,
+  removeAuthenticated,
+} from "../utils/localStorage";
 
 const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const isAuth = localStorage.getItem("auth") === "true";
+  const isAuth = isAuthenticated();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const openProfile = Boolean(anchorEl);
-  const [user, setUser] = useState<{ name?: string; email?: string }>({});
+  const [user, setUserState] = useState<{ name?: string; email?: string }>({});
 
   useEffect(() => {
-    const auth = localStorage.getItem("auth");
-    const stored = JSON.parse(localStorage.getItem("user") || "{}");
-    if (auth && stored.email) {
+    const auth = isAuthenticated();
+    const stored = getUser();
+    if (auth && stored?.email) {
       api
         .get(`/auth/otp-user?email=${encodeURIComponent(stored.email)}`)
-        .then((res) => setUser(res.data))
-        .catch(() => setUser(stored));
+        .then((res) => setUserState(res.data))
+        .catch(() => setUserState(stored));
     } else {
-      setUser(stored);
+      setUserState(stored || {});
     }
   }, [isAuth]);
-  // Debug log for user info
-  useEffect(() => {
-    console.log("Navbar user:", user);
-  }, [user]);
+
   function getInitials(userObj: any) {
     if (!userObj) return "U";
-    if (userObj.first_name && userObj.last_name)
-      return (userObj.first_name[0] + userObj.last_name[0]).toUpperCase();
-    if (userObj.first_name) return userObj.first_name[0].toUpperCase();
+    if (userObj.firstName && userObj.lastName)
+      return (userObj.firstName[0] + userObj.lastName[0]).toUpperCase();
+    if (userObj.firstName) return userObj.firstName[0].toUpperCase();
     if (userObj.email && userObj.email.includes("@"))
       return userObj.email[0].toUpperCase();
     return "U";
@@ -60,6 +63,13 @@ const Navbar: React.FC = () => {
   const handleProfileClick = (event: React.MouseEvent<HTMLElement>) =>
     setAnchorEl(event.currentTarget);
   const handleProfileClose = () => setAnchorEl(null);
+
+  const handleLogout = () => {
+    removeAuthenticated();
+    removeUser();
+    navigate("/login");
+    handleProfileClose();
+  };
 
   // Navigation links for Drawer
   const navLinks = [
@@ -248,18 +258,9 @@ const Navbar: React.FC = () => {
                   onClose={handleProfileClose}
                 >
                   <MenuItem disabled>
-                    {user.first_name || user.email || "User"}
+                    {user.firstName || user.email || "User"}
                   </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      localStorage.removeItem("auth");
-                      localStorage.removeItem("user");
-                      navigate("/login");
-                      handleProfileClose();
-                    }}
-                  >
-                    Logout
-                  </MenuItem>
+                  <MenuItem onClick={handleLogout}>Logout</MenuItem>
                 </Menu>
               )}
             </>
@@ -324,13 +325,7 @@ const Navbar: React.FC = () => {
                 )}
                 {isAuth && (
                   <ListItem disablePadding>
-                    <ListItemButton
-                      onClick={() => {
-                        localStorage.removeItem("auth");
-                        navigate("/login");
-                        setDrawerOpen(false);
-                      }}
-                    >
+                    <ListItemButton onClick={handleLogout}>
                       <ListItemText primary="Logout" />
                     </ListItemButton>
                   </ListItem>

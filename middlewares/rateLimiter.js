@@ -1,21 +1,35 @@
-const otpRateLimit = {};
-const OTP_RATE_LIMIT_WINDOW = 60 * 1000; // 1 min
-const OTP_RATE_LIMIT_MAX = 3;
+const config = require("../config");
 
-module.exports = (req, res, next) => {
-  const email = req.body.email;
-  if (!email)
-    return res.status(400).json({ error: "Email required for rate limiting." });
-  const now = Date.now();
-  otpRateLimit[email] = otpRateLimit[email] || [];
-  otpRateLimit[email] = otpRateLimit[email].filter(
-    (t) => now - t < OTP_RATE_LIMIT_WINDOW
-  );
-  if (otpRateLimit[email].length >= OTP_RATE_LIMIT_MAX) {
-    return res
-      .status(429)
-      .json({ error: "Too many OTP requests. Please wait a minute." });
+class RateLimiter {
+  constructor({ windowMs = 60 * 1000, max = 3 } = {}) {
+    this.windowMs = windowMs;
+    this.max = max;
+    this.requests = {};
   }
-  otpRateLimit[email].push(now);
-  next();
-};
+
+  middleware = (req, res, next) => {
+    const email = req.body.email;
+    if (!email)
+      return res
+        .status(400)
+        .json({ error: "Email required for rate limiting." });
+    const now = Date.now();
+    this.requests[email] = this.requests[email] || [];
+    this.requests[email] = this.requests[email].filter(
+      (t) => now - t < this.windowMs
+    );
+    if (this.requests[email].length >= this.max) {
+      return res
+        .status(429)
+        .json({ error: "Too many OTP requests. Please wait a minute." });
+    }
+    this.requests[email].push(now);
+    next();
+  };
+}
+
+const otpRateLimiter = new RateLimiter({ 
+  windowMs: config.timeouts.rateLimiterWindow, 
+  max: config.timeouts.rateLimiterMaxRequests 
+});
+module.exports = otpRateLimiter.middleware;

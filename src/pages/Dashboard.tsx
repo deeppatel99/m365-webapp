@@ -1,5 +1,5 @@
 // Dashboard page for authenticated users
-import React, { useState } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   Box,
   Typography,
@@ -32,7 +32,18 @@ import {
 import dashboardBg from "../assets/logokit/fs-bkg-1440.png";
 import logo from "../assets/logokit/Forsynse logo_Bold_Black.svg";
 import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
-import { useEffect } from "react";
+import {
+  getUser,
+  setUser,
+  removeUser,
+  isAuthenticated,
+  setAuthenticated,
+  removeAuthenticated,
+} from "../utils/localStorage";
+import ActionBar from "../components/dashboard/ActionBar";
+import ConsoleOutput from "../components/dashboard/ConsoleOutput";
+import ExportControls from "../components/dashboard/ExportControls";
+import LoadingOverlay from "../components/dashboard/LoadingOverlay";
 
 const exportFormats = [
   { value: "json", label: "JSON" },
@@ -54,24 +65,27 @@ const Dashboard: React.FC = () => {
   const [isFetching, setIsFetching] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
-  const [user, setUser] = useState<{ first_name?: string; name?: string }>({});
+  const [user, setUserState] = useState<{ firstName?: string; name?: string }>(
+    {}
+  );
   const isSignedIn = useIsSignedIn()[0];
-  const { showMessage } = React.useContext(SnackbarContext);
+  const { showMessage } = useContext(SnackbarContext);
   // Remove useTheme import
 
   useEffect(() => {
-    if (localStorage.getItem("auth") !== "true") {
+    if (!isAuthenticated()) {
       navigate("/login");
     }
     // Load user from localStorage
-    const stored = JSON.parse(localStorage.getItem("user") || "{}") || {};
-    setUser(stored);
+    const stored = getUser() || {};
+    setUserState(stored);
   }, [navigate]);
 
   // Removed the useEffect that overwrites localStorage user from Graph API
 
   const handleLogout = () => {
-    localStorage.removeItem("auth");
+    removeAuthenticated();
+    removeUser();
     navigate("/login");
   };
 
@@ -128,6 +142,42 @@ const Dashboard: React.FC = () => {
           </span>,
           "success"
         );
+      } else if (selectedAction === "getAdminRolesWithUsers") {
+        const roles = await callGraphApi<{ value: any[] }>(
+          GRAPH_ENDPOINTS.directoryRoles
+        );
+
+        // Filter enabled roles
+        const enabledRoles = roles.value;
+
+        const result: any[] = [];
+
+        for (const role of enabledRoles) {
+          // For each role, get members (users assigned)
+          const membersRes = await callGraphApi<{ value: any[] }>(
+            `/directoryRoles/${role.id}/members?$select=displayName,userPrincipalName`
+          );
+
+          for (const user of membersRes.value) {
+            result.push({
+              roleDisplayName: role.displayName,
+              userDisplayName: user.displayName,
+              userPrincipalName: user.userPrincipalName,
+            });
+          }
+        }
+
+        setResponseData({ value: result });
+        setResponse(JSON.stringify({ value: result }, null, 2));
+        showMessage(
+          <span>
+            <CheckCircleIcon
+              sx={{ verticalAlign: "middle", color: "success.main", mr: 1 }}
+            />
+            Admin roles and assigned users fetched successfully!
+          </span>,
+          "success"
+        );
       } else {
         setResponse("Action not implemented.");
         setResponseData(null);
@@ -166,7 +216,7 @@ const Dashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `InactiveUsers.${fileExtension}`;
+    link.download = `${selectedAction === "getAdminRolesWithUsers" ? "AdminRolesUsers" : "InactiveUsers"}.${fileExtension}`;
     link.click();
     URL.revokeObjectURL(url);
     setExporting(false);
@@ -253,62 +303,15 @@ const Dashboard: React.FC = () => {
               }}
             />
           </Box>
-          {showLoadingOverlay && (
-            <Box
-              sx={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                bgcolor: "rgba(255,255,255,0.7)",
-                zIndex: 10,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 3,
-              }}
-            >
-              <CircularProgress size={48} color="primary" />
-            </Box>
-          )}
+          {showLoadingOverlay && <LoadingOverlay open={showLoadingOverlay} />}
           <CardContent>
-            <Box sx={actionBarStyle}>
-              {/* Left: Action controls */}
-              <Box sx={actionControlsStyle}>
-                <Box sx={selectLabelStyle}>Select an action:</Box>
-                <FormControl sx={{ minWidth: 260 }} size="small">
-                  <span style={{ display: "inline-block", width: "100%" }}>
-                    <Select
-                      displayEmpty
-                      value={selectedAction}
-                      onChange={handleActionChange}
-                      inputProps={{ "aria-label": "Select an action" }}
-                    >
-                      <MenuItem value="getInactiveUsers">
-                        Get inactive users (90 Days+)
-                      </MenuItem>
-                    </Select>
-                  </span>
-                </FormControl>
-                <span style={{ display: "inline-block" }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleSubmit}
-                    disabled={isFetching || !isSignedIn}
-                    sx={{
-                      height: 44,
-                      minWidth: 120,
-                      fontSize: 16,
-                      fontWeight: 600,
-                    }}
-                    tabIndex={0}
-                  >
-                    {isFetching ? <CircularProgress size={24} /> : "Submit"}
-                  </Button>
-                </span>
-              </Box>
+            <ActionBar
+              selectedAction={selectedAction}
+              onActionChange={handleActionChange}
+              isFetching={isFetching}
+              isSignedIn={isSignedIn}
+              onSubmit={handleSubmit}
+            >
               {/* Right: User info and sign in, with improved UI */}
               <Box
                 display="flex"
@@ -341,36 +344,14 @@ const Dashboard: React.FC = () => {
                   <Login />
                 </Box>
               </Box>
-            </Box>
+            </ActionBar>
             <Divider sx={{ mb: 3 }} />
             <Typography variant="h6" fontWeight={600} mb={2}>
               Console Output
             </Typography>
-            <Box sx={outputBoxStyle}>
-              <TextField
-                multiline
-                minRows={14}
-                maxRows={28}
-                fullWidth
-                value={response}
-                InputProps={{
-                  readOnly: true,
-                  style: {
-                    fontFamily:
-                      "Fira Mono, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                    background: "transparent",
-                    border: "none",
-                    fontSize: 16,
-                  },
-                  disableUnderline: true,
-                  "aria-label": "Console Output",
-                }}
-                variant="standard"
-                sx={{ border: "none" }}
-                placeholder="Results will appear here after you submit an action."
-              />
-              {/* Empty State */}
-              {!response && (
+            <ConsoleOutput
+              response={response}
+              emptyState={
                 <Box
                   display="flex"
                   flexDirection="column"
@@ -385,42 +366,17 @@ const Dashboard: React.FC = () => {
                     No data yet. Please select an action and click Submit.
                   </Typography>
                 </Box>
-              )}
-            </Box>
-            <Box display="flex" alignItems="center" justifyContent="flex-end">
-              <FormControl size="small" sx={{ minWidth: 100, mr: 3 }}>
-                <span style={{ display: "inline-block", width: "100%" }}>
-                  <Select
-                    value={exportFormat}
-                    onChange={handleExportFormatChange}
-                  >
-                    {exportFormats.map((format) => (
-                      <MenuItem key={format.value} value={format.value}>
-                        {format.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </span>
-              </FormControl>
-              <span style={{ display: "inline-block" }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleExport}
-                  disabled={!responseData || exporting}
-                  sx={{
-                    fontWeight: 600,
-                    minWidth: 120,
-                    fontSize: 16,
-                    boxShadow: 2,
-                    ":hover": { boxShadow: 4 },
-                  }}
-                  tabIndex={0}
-                >
-                  {exporting ? <CircularProgress size={24} /> : "Export"}
-                </Button>
-              </span>
-            </Box>
+              }
+              outputBoxStyle={outputBoxStyle}
+            />
+            <ExportControls
+              exportFormat={exportFormat}
+              onExportFormatChange={handleExportFormatChange}
+              exporting={exporting}
+              onExport={handleExport}
+              exportFormats={exportFormats}
+              disabled={!responseData}
+            />
           </CardContent>
         </Card>
       </Box>
