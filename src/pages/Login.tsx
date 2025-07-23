@@ -12,17 +12,22 @@ import { SnackbarContext } from "../context/SnackbarContext";
 import api from "../utils/api";
 import { LoginForm, LoginErrors } from "../types/forms";
 import { validateLogin } from "../utils/validation";
-import heroBg from "../assets/logokit/fs-bkg-1440.png";
 import logo from "../assets/logokit/Forsynse logo_Bold_Black.svg";
+import LockoutModal from "../components/LockoutModal";
+import {
+  setUser,
+  isAuthenticated,
+  setAuthenticated,
+} from "../utils/localStorage";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [lockoutModal, setLockoutModal] = useState<boolean>(false);
   const navigate = useNavigate();
   const { showMessage } = useContext(SnackbarContext);
 
-  // Handle form submission
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const errs = validateLogin({ email });
@@ -33,19 +38,20 @@ const Login: React.FC = () => {
     setError("");
     setLoading(true);
     try {
-      // Call login API
       await api.post("/login", { email });
       showMessage("OTP sent to your email.", "success");
+      setAuthenticated();
+      setUser({ email: email.trim().toLowerCase() });
       navigate("/verify", { state: { email } });
-      // Store user info for Navbar
-      localStorage.setItem(
-        "user",
-        JSON.stringify({ email: email.trim().toLowerCase() })
-      );
     } catch (err: any) {
       const backendMsg =
         err.response?.data?.error || err.response?.data?.message;
-      showMessage(backendMsg || "Login failed", "error");
+      if (backendMsg && backendMsg.includes("maximum execution limits")) {
+        setLockoutModal(true);
+        return;
+      } else {
+        showMessage(backendMsg || "Login failed", "error");
+      }
     } finally {
       setLoading(false);
     }
@@ -105,7 +111,7 @@ const Login: React.FC = () => {
           letterSpacing={0.5}
           align="center"
           sx={{
-            color: "#000"
+            color: "#000",
           }}
         >
           Login
@@ -147,6 +153,10 @@ const Login: React.FC = () => {
           New user? Sign up
         </Button>
       </Box>
+      <LockoutModal
+        open={lockoutModal}
+        onClose={() => setLockoutModal(false)}
+      />
     </Box>
   );
 };

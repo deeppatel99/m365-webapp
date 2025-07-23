@@ -55,8 +55,8 @@ const Signup: React.FC = () => {
       }
       // Call signup API (backend expects snake_case fields)
       await api.post("/signup", {
-        first_name: form.firstName,
-        last_name: form.lastName,
+        firstName: form.firstName,
+        lastName: form.lastName,
         company: form.company,
         email: form.email,
       });
@@ -130,7 +130,7 @@ const Signup: React.FC = () => {
           letterSpacing={0.5}
           align="center"
           sx={{
-            color: "#000"
+            color: "#000",
           }}
         >
           Sign Up

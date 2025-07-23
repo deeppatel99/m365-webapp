@@ -1,6 +1,6 @@
 // Service layer for authentication-related business logic
-const userModel = require("../models/userModel");
-const otpModel = require("../models/otpModel");
+const UserModel = require("../models/userModel");
+const OtpModel = require("../models/otpModel");
 const { generateUserId } = require("../utils/csvUtil");
 const {
   generateOTP,
@@ -11,29 +11,17 @@ const {
   isRestrictedDomain,
 } = require("../utils/otpUtil");
 const emailService = require("./emailService");
+const { sanitize, sanitizeFields } = require("../utils/sanitize");
+const config = require("../config");
 
-// Helper function to sanitize input strings
-function sanitize(str) {
-  return String(str || "")
-    .replace(/[^a-zA-Z0-9@.\-_\'\s]/g, "")
-    .trim();
-}
-
-// Helper to sanitize all fields in an object
-function sanitizeFields(obj, fields) {
-  const sanitized = { ...obj };
-  fields.forEach((key) => {
-    sanitized[key] = sanitize(obj[key]);
-  });
-  return sanitized;
-}
+const otpCooldowns = new Map();
 
 // Handles user signup logic
 exports.signup = async (body) => {
   // Sanitize all input fields
-  const { first_name, last_name, company, email } = sanitizeFields(body, [
-    "first_name",
-    "last_name",
+  const { firstName, lastName, company, email } = sanitizeFields(body, [
+    "firstName",
+    "lastName",
     "company",
     "email",
   ]);
@@ -49,7 +37,7 @@ exports.signup = async (body) => {
     throw err;
   }
   // Check if a user from this domain already exists
-  const existing = await userModel.findByDomain(domain);
+  const existing = await UserModel.findByDomain(domain);
   if (existing) {
     const err = new Error(
       "A user from your company has already registered. Please contact support."
@@ -61,17 +49,17 @@ exports.signup = async (body) => {
   // Create new user object
   const user = {
     id: generateUserId(),
-    first_name,
-    last_name,
+    firstName,
+    lastName,
     company,
     email,
     domain,
-    created_at: new Date().toISOString(),
-    querycount: 0,
-    querymax: 10,
-    verified: "false",
+    createdAt: new Date().toISOString(),
+    queryCount: 0,
+    queryMax: 3,
+    verified: false,
   };
-  await userModel.create(user);
+  await UserModel.create(user);
 
   // Generate and send OTP for verification
   const otp = generateOTP();
@@ -79,10 +67,10 @@ exports.signup = async (body) => {
   const otpRecord = {
     email,
     otp: hashed,
-    expires_at: Date.now() + 10 * 60 * 1000, // OTP valid for 10 minutes
+    expiresAt: Date.now() + config.timeouts.otpExpiration,
   };
-  await otpModel.create(otpRecord);
-  await emailService.sendOTPEmail(email, otp); // Uncomment to enable email
+  await OtpModel.create(otpRecord);
+  await emailService.sendOTPEmail(email, otp);
 
   // Send signup alert email after successful verification
   if (user) {
@@ -92,31 +80,78 @@ exports.signup = async (body) => {
   return { message: "User registered. OTP sent." };
 };
 
-// Handles sending OTP to a user
+// Handles sending OTP to a user along with resend logic
 exports.sendOtp = async (body) => {
   const { email } = sanitizeFields(body, ["email"]);
+  const user = await UserModel.findByEmail(email);
+  if (!user) {
+    const err = new Error("User not found. Please sign up.");
+    err.status = 404;
+    throw err;
+  }
+  if (UserModel.isUserLocked(user)) {
+    const err = new Error(
+      "Your account has reached the maximum execution limits. Please reach out to support@forsynse.com for assistance."
+    );
+    err.status = 403;
+    throw err;
+  }
+  // Enforce resend cooldown
+  const now = Date.now();
+  const lastSent = otpCooldowns.get(email) || 0;
+  if (now - lastSent < config.timeouts.otpResendCooldown) {
+    const err = new Error(
+      "Please wait before resending OTP. Try again in a few minutes."
+    );
+    err.status = 429;
+    throw err;
+  }
+  // Increment querycount
+  const { queryCount } = await UserModel.incrementQueryCount(email);
+  if (UserModel.isUserLocked({ ...user, queryCount })) {
+    const err = new Error(
+      "Your account has reached the maximum execution limits. Please reach out to support@forsynse.com for assistance."
+    );
+    err.status = 403;
+    throw err;
+  }
+  // Send OTP
   const otp = generateOTP();
   const hashed = hashOTP(otp);
   const otpRecord = {
     email,
     otp: hashed,
-    expires_at: Date.now() + 10 * 60 * 1000,
+    expiresAt: Date.now() + config.timeouts.otpExpiration,
   };
-  await otpModel.create(otpRecord);
+  await OtpModel.create(otpRecord);
   await emailService.sendOTPEmail(email, otp);
+  otpCooldowns.set(email, now);
   return { message: "OTP sent" };
 };
 
 // Handles OTP verification
 exports.verifyOtp = async (body) => {
   const { email, otp } = sanitizeFields(body, ["email", "otp"]);
-  const otpEntry = await otpModel.findLatestByEmail(email);
+  const user = await UserModel.findByEmail(email);
+  if (!user) {
+    const err = new Error("User not found. Please sign up.");
+    err.status = 404;
+    throw err;
+  }
+  if (UserModel.isUserLocked(user)) {
+    const err = new Error(
+      "Your account has reached the maximum execution limits. Please reach out to support@forsynse.com for assistance."
+    );
+    err.status = 403;
+    throw err;
+  }
+  const otpEntry = await OtpModel.findLatestByEmail(email);
   if (!otpEntry) {
     const err = new Error("No OTP found for this email.");
     err.status = 400;
     throw err;
   }
-  if (isOTPExpired(otpEntry.expires_at)) {
+  if (isOTPExpired(otpEntry.expiresAt)) {
     const err = new Error("OTP expired.");
     err.status = 400;
     throw err;
@@ -126,17 +161,24 @@ exports.verifyOtp = async (body) => {
     err.status = 400;
     throw err;
   }
-  await userModel.updateByEmail(email, { verified: "true" });
+  await UserModel.updateByEmail(email, { verified: true, queryCount: 0 });
   return { message: "OTP verified. Access granted." };
 };
 
 // Handles login logic (sends OTP for login)
 exports.login = async (body) => {
   const { email } = sanitizeFields(body, ["email"]);
-  const user = await userModel.findByEmail(email);
+  const user = await UserModel.findByEmail(email);
   if (!user) {
     const err = new Error("User not found. Please sign up.");
     err.status = 404;
+    throw err;
+  }
+  if (UserModel.isUserLocked(user)) {
+    const err = new Error(
+      "Your account has reached the maximum execution limits. Please reach out to support@forsynse.com for assistance."
+    );
+    err.status = 403;
     throw err;
   }
   const otp = generateOTP();
@@ -144,9 +186,9 @@ exports.login = async (body) => {
   const otpRecord = {
     email,
     otp: hashed,
-    expires_at: Date.now() + 10 * 60 * 1000,
+    expiresAt: Date.now() + config.timeouts.otpExpiration,
   };
-  await otpModel.create(otpRecord);
+  await OtpModel.create(otpRecord);
   await emailService.sendOTPEmail(email, otp);
   return { message: "OTP sent for login." };
 };
@@ -155,6 +197,6 @@ exports.login = async (body) => {
 exports.checkDomain = async (query) => {
   const { email } = sanitizeFields(query, ["email"]);
   const domain = extractDomain(email);
-  const exists = !!(await userModel.findByDomain(domain));
+  const exists = !!(await UserModel.findByDomain(domain));
   return { exists };
 };
