@@ -50,10 +50,44 @@ const exportFormats = [
   { value: "csv", label: "CSV" },
 ];
 
+interface User {
+  id: string;
+  displayName: string;
+  userPrincipalName: string;
+}
+
+interface SignInActivity {
+  lastSignInDateTime: string | null;
+}
+
 interface InactiveUser {
   displayName: string;
   userPrincipalName: string;
   lastSignInDateTime: string | null;
+}
+
+interface InactiveDevice {
+  displayName: string;
+  deviceOwnership: string;
+  managementType: string;
+  operatingSystem: string;
+  approximateLastSignInDateTime: string;
+  registrationDateTime: string;
+}
+
+interface NamedLocation {
+  displayName: string;
+  isTrusted: boolean;
+  cidrAddresses: string[];
+}
+
+interface AzureNamedLocation {
+  id: string;
+  displayName: string;
+  isTrusted?: boolean;
+  ipRanges?: Array<{
+    cidrAddress?: string;
+  }>;
 }
 
 interface RoleWithUsers {
@@ -78,7 +112,18 @@ const Dashboard: React.FC = () => {
   );
   const isSignedIn = useIsSignedIn()[0];
   const { showMessage } = useContext(SnackbarContext);
-  // Remove useTheme import
+
+  // Action options for the dropdown
+  const actionOptions = [
+    { value: "getInactiveUsers", label: "Get inactive users (90 Days+)" },
+    { value: "getInactiveDevices", label: "Get inactive devices (90 Days+)" },
+    { value: "getAdminRolesWithUsers", label: "Get Admin Roles with Users" },
+    { value: "getPolicies", label: "Get Conditional Access policies" },
+    {
+      value: "getNamedLocations",
+      label: "Get Conditional Access named locations",
+    },
+  ];
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -89,7 +134,201 @@ const Dashboard: React.FC = () => {
     setUserState(stored);
   }, [navigate]);
 
-  // Removed the useEffect that overwrites localStorage user from Graph API
+  // Function to get user details (display name & userPrincipalName)
+  const getUserDetails = async (
+    userId: string
+  ): Promise<{ displayName: string; userPrincipalName: string }> => {
+    if (userId === "All" || userId === "None") {
+      return { displayName: userId, userPrincipalName: userId };
+    }
+
+    try {
+      const userDetails = await callGraphApi<User>(`/users/${userId}`);
+      console.log(
+        `Found displayName & UserPrincipalName for user ${userId}: ${userDetails.displayName} - ${userDetails.userPrincipalName}`
+      );
+
+      return {
+        displayName: userDetails.displayName || userId,
+        userPrincipalName: userDetails.userPrincipalName || "N/A",
+      };
+    } catch (error) {
+      console.error(`Error fetching user details for ${userId}: `, error);
+      return { displayName: userId, userPrincipalName: "N/A" };
+    }
+  };
+
+  // Fetch role displayName using roleTemplateId
+  const getRoleDisplayName = async (roleId: string): Promise<string> => {
+    if (roleId === "All" || roleId === "None") {
+      return roleId;
+    }
+
+    try {
+      // Get role template directly by ID
+      const roleTemplate = await callGraphApi<any>(
+        `/directoryRoleTemplates/${roleId}`
+      );
+      return roleTemplate.displayName || roleId;
+    } catch (error) {
+      console.error(`Error fetching role template for ${roleId}:`, error);
+      return roleId;
+    }
+  };
+
+  // Replace user & role IDs with display names
+  const replaceIdsWithUserDetails = async (result: any) => {
+    const updatedResult = JSON.parse(JSON.stringify(result));
+
+    if (updatedResult.value && Array.isArray(updatedResult.value)) {
+      for (let policy of updatedResult.value) {
+        if (policy.conditions && policy.conditions.users) {
+          const users = policy.conditions.users;
+
+          // IncludeUsers
+          if (users.includeUsers && Array.isArray(users.includeUsers)) {
+            for (let i = 0; i < users.includeUsers.length; i++) {
+              const userId = users.includeUsers[i];
+              if (userId !== "All" && userId !== "None") {
+                const { displayName, userPrincipalName } = await getUserDetails(
+                  userId
+                );
+                users.includeUsers[i] = {
+                  id: userId,
+                  displayName,
+                  userPrincipalName,
+                };
+              }
+            }
+          }
+
+          // ExcludeUsers
+          if (users.excludeUsers && Array.isArray(users.excludeUsers)) {
+            for (let i = 0; i < users.excludeUsers.length; i++) {
+              const userId = users.excludeUsers[i];
+              if (userId !== "All" && userId !== "None") {
+                const { displayName, userPrincipalName } = await getUserDetails(
+                  userId
+                );
+                users.excludeUsers[i] = {
+                  id: userId,
+                  displayName,
+                  userPrincipalName,
+                };
+              }
+            }
+          }
+
+          // IncludeRoles
+          if (users.includeRoles && Array.isArray(users.includeRoles)) {
+            for (let i = 0; i < users.includeRoles.length; i++) {
+              const roleId = users.includeRoles[i];
+              if (roleId !== "All" && roleId !== "None") {
+                const roleDisplayName = await getRoleDisplayName(roleId);
+                users.includeRoles[i] = {
+                  id: roleId,
+                  displayName: roleDisplayName,
+                };
+              }
+            }
+          }
+
+          // ExcludeRoles
+          if (users.excludeRoles && Array.isArray(users.excludeRoles)) {
+            for (let i = 0; i < users.excludeRoles.length; i++) {
+              const roleId = users.excludeRoles[i];
+              if (roleId !== "All" && roleId !== "None") {
+                const roleDisplayName = await getRoleDisplayName(roleId);
+                users.excludeRoles[i] = {
+                  id: roleId,
+                  displayName: roleDisplayName,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return updatedResult;
+  };
+
+  // Enhanced CSV conversion function that handles nested objects
+  const convertToCSVAdvanced = (objArray: any[]): string => {
+    if (!objArray || objArray.length === 0) return "";
+
+    // If the data is deeply nested, we need a flattening function
+    const flattenObject = (obj: any, prefix = ""): any => {
+      return Object.keys(obj).reduce((acc: any, key: string) => {
+        const pre = prefix.length ? `${prefix}.` : "";
+        if (
+          typeof obj[key] === "object" &&
+          obj[key] !== null &&
+          !Array.isArray(obj[key])
+        ) {
+          Object.assign(acc, flattenObject(obj[key], `${pre}${key}`));
+        } else if (Array.isArray(obj[key])) {
+          // Handle arrays - join with semicolons to keep in one cell
+          acc[`${pre}${key}`] = obj[key]
+            .map((item: any) => {
+              if (typeof item === "object") {
+                return JSON.stringify(item);
+              }
+              return item;
+            })
+            .join("; ");
+        } else {
+          acc[`${pre}${key}`] = obj[key];
+        }
+        return acc;
+      }, {});
+    };
+
+    // Flatten each object in the array
+    const flattenedArray = objArray.map((obj) => flattenObject(obj));
+
+    // Get all unique keys
+    const headers = Array.from(
+      new Set(
+        flattenedArray.reduce((keys: string[], obj) => {
+          return [...keys, ...Object.keys(obj)];
+        }, [])
+      )
+    ) as string[];
+
+    // Build CSV string
+    let csvString = headers.join(",") + "\r\n";
+
+    // Add each row
+    csvString += flattenedArray
+      .map((obj) => {
+        return headers
+          .map((header: string) => {
+            let value = obj[header] === undefined ? "" : obj[header];
+
+            // Escape quotes and handle commas
+            if (typeof value === "string") {
+              // Replace double quotes with two double quotes (CSV standard)
+              value = value.replace(/"/g, '""');
+
+              // If value contains commas, newlines, or quotes, wrap in quotes
+              if (
+                value.includes(",") ||
+                value.includes("\n") ||
+                value.includes('"')
+              ) {
+                value = `"${value}"`;
+              }
+            }
+
+            return value;
+          })
+          .join(",");
+      })
+      .join("\r\n");
+
+    return csvString;
+  };
 
   const handleLogout = () => {
     removeAuthenticated();
@@ -118,7 +357,27 @@ const Dashboard: React.FC = () => {
     setShowLoadingOverlay(true);
     setResponse("");
     try {
-      if (selectedAction === "getInactiveUsers") {
+      if (selectedAction === "getPolicies") {
+        setResponse("Fetching policies...");
+        const result = await callGraphApi(
+          "/policies/conditionalAccessPolicies"
+        );
+
+        setResponse("Processing user and role data...");
+        const updatedResult = await replaceIdsWithUserDetails(result);
+
+        setResponseData(updatedResult);
+        setResponse(JSON.stringify(updatedResult, null, 2));
+        showMessage(
+          <span>
+            <CheckCircleIcon
+              sx={{ verticalAlign: "middle", color: "success.main", mr: 1 }}
+            />
+            Policies fetched successfully!
+          </span>,
+          "success"
+        );
+      } else if (selectedAction === "getInactiveUsers") {
         const result = await callGraphApi<{ value: any[] }>(
           GRAPH_ENDPOINTS.users
         );
@@ -147,6 +406,75 @@ const Dashboard: React.FC = () => {
               sx={{ verticalAlign: "middle", color: "success.main", mr: 1 }}
             />
             Inactive users fetched successfully!
+          </span>,
+          "success"
+        );
+      } else if (selectedAction === "getInactiveDevices") {
+        setResponse("Fetching Inactive Devices...");
+        const result = await callGraphApi<{ value: InactiveDevice[] }>(
+          "/devices?$select=displayName,deviceOwnership,managementType,operatingSystem,approximateLastSignInDateTime,registrationDateTime"
+        );
+
+        const get90DaysAgo = getDateNDaysAgo(90);
+
+        // Filter devices that haven't signed in in the last 90 days
+        const inactiveDevices = (result.value || []).filter((device: any) => {
+          const signInDate = device.approximateLastSignInDateTime
+            ? new Date(device.approximateLastSignInDateTime)
+            : null;
+          return signInDate && signInDate < get90DaysAgo;
+        });
+
+        // Extract only the required fields
+        const filteredInactiveDevices = inactiveDevices.map((device: any) => ({
+          displayName: device.displayName,
+          deviceOwnership: device.deviceOwnership,
+          managementType: device.managementType,
+          operatingSystem: device.operatingSystem,
+          approximateLastSignInDateTime: device.approximateLastSignInDateTime,
+          registrationDateTime: device.registrationDateTime,
+        }));
+
+        setResponseData({ value: filteredInactiveDevices });
+        setResponse(
+          JSON.stringify({ value: filteredInactiveDevices }, null, 2)
+        );
+        showMessage(
+          <span>
+            <CheckCircleIcon
+              sx={{ verticalAlign: "middle", color: "success.main", mr: 1 }}
+            />
+            Inactive devices fetched successfully!
+          </span>,
+          "success"
+        );
+      } else if (selectedAction === "getNamedLocations") {
+        setResponse("Fetching named locations...");
+        const result = await callGraphApi<{ value: AzureNamedLocation[] }>(
+          "/identity/conditionalAccess/namedLocations"
+        );
+
+        // Map to NamedLocation interface with type safety
+        const filteredLocations: NamedLocation[] = result.value.map(
+          (location) => ({
+            displayName: location.displayName,
+            isTrusted: location.isTrusted || false,
+            cidrAddresses:
+              location.ipRanges
+                ?.map((ip) => ip.cidrAddress)
+                ?.filter((cidr): cidr is string => !!cidr) || [],
+          })
+        );
+
+        const formattedResponse = { value: filteredLocations };
+        setResponseData(formattedResponse);
+        setResponse(JSON.stringify(formattedResponse, null, 2));
+        showMessage(
+          <span>
+            <CheckCircleIcon
+              sx={{ verticalAlign: "middle", color: "success.main", mr: 1 }}
+            />
+            Named locations fetched successfully!
           </span>,
           "success"
         );
@@ -243,7 +571,11 @@ const Dashboard: React.FC = () => {
           }))
         );
         csvData = convertToCSV(flattenedData);
+      } else if (selectedAction === "getPolicies") {
+        // Use advanced CSV conversion for complex policy data
+        csvData = convertToCSVAdvanced(data);
       } else {
+        // Use regular CSV conversion for simple data
         csvData = convertToCSV(data);
       }
 
@@ -258,11 +590,30 @@ const Dashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${
-      selectedAction === "getAdminRolesWithUsers"
-        ? "AdminRolesUsers"
-        : "InactiveUsers"
-    }.${fileExtension}`;
+
+    // Set appropriate filename based on action
+    let filename = "response";
+    switch (selectedAction) {
+      case "getAdminRolesWithUsers":
+        filename = "AdminRolesUsers";
+        break;
+      case "getInactiveUsers":
+        filename = "InactiveUsers";
+        break;
+      case "getInactiveDevices":
+        filename = "InactiveDevices";
+        break;
+      case "getPolicies":
+        filename = "ConditionalAccessPolicies";
+        break;
+      case "getNamedLocations":
+        filename = "NamedLocations";
+        break;
+      default:
+        filename = "response";
+    }
+
+    link.download = `${filename}.${fileExtension}`;
     link.click();
     URL.revokeObjectURL(url);
     setExporting(false);
@@ -357,6 +708,7 @@ const Dashboard: React.FC = () => {
               isFetching={isFetching}
               isSignedIn={isSignedIn}
               onSubmit={handleSubmit}
+              actionOptions={actionOptions}
             >
               {/* Right: User info and sign in, with improved UI */}
               <Box
