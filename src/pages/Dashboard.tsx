@@ -44,6 +44,8 @@ import ActionBar from "../components/dashboard/ActionBar";
 import ConsoleOutput from "../components/dashboard/ConsoleOutput";
 import ExportControls from "../components/dashboard/ExportControls";
 import LoadingOverlay from "../components/dashboard/LoadingOverlay";
+import LockoutModal from "../components/LockoutModal";
+import api from "../utils/api";
 
 const exportFormats = [
   { value: "json", label: "JSON" },
@@ -107,7 +109,8 @@ const Dashboard: React.FC = () => {
   const [isFetching, setIsFetching] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
-  const [user, setUserState] = useState<{ firstName?: string; name?: string }>(
+  const [lockoutModal, setLockoutModal] = useState<boolean>(false);
+  const [user, setUserState] = useState<{ firstName?: string; name?: string; email?: string }>(
     {}
   );
   const isSignedIn = useIsSignedIn()[0];
@@ -133,6 +136,37 @@ const Dashboard: React.FC = () => {
     const stored = getUser() || {};
     setUserState(stored);
   }, [navigate]);
+
+  // Function to check queryCount and handle lockout before executing queries
+  const checkQueryLimitAndExecute = async () => {
+    const storedUser = getUser();
+    if (!storedUser?.email) {
+      showMessage("User email not found. Please login again.", "error");
+      return false;
+    }
+
+    try {
+      // Call backend to increment queryCount and check limits
+      await api.post("/dashboard/execute-query", {
+        email: storedUser.email,
+        action: selectedAction,
+      });
+      return true;
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        "Query execution failed";
+      
+      if (msg.includes("maximum execution limits")) {
+        setLockoutModal(true);
+        return false;
+      }
+      
+      showMessage(msg, "error");
+      return false;
+    }
+  };
 
   // Function to get user details (display name & userPrincipalName)
   const getUserDetails = async (
@@ -353,9 +387,18 @@ const Dashboard: React.FC = () => {
       setResponseData(null);
       return;
     }
+
+    // Check query limits and increment queryCount before proceeding
+    const canProceed = await checkQueryLimitAndExecute();
+    if (!canProceed) {
+      setResponse("");
+      return;
+    }
+
     setIsFetching(true);
     setShowLoadingOverlay(true);
     setResponse("");
+    
     try {
       if (selectedAction === "getPolicies") {
         setResponse("Fetching policies...");
@@ -778,6 +821,10 @@ const Dashboard: React.FC = () => {
           </CardContent>
         </Card>
       </Box>
+      <LockoutModal
+        open={lockoutModal}
+        onClose={() => setLockoutModal(false)}
+      />
     </Box>
   );
 };

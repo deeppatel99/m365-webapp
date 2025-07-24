@@ -49,7 +49,7 @@ class UserModel {
   static isUserLocked(user) {
     if (!user) return true;
     const queryCount = parseInt(user.queryCount || "0", 10);
-    const queryMax = parseInt(user.queryMax || "3", 10);
+    const queryMax = parseInt(user.queryMax || "4", 10);
     return queryCount >= queryMax;
   }
 }

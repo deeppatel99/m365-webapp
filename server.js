@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const authRoutes = require("./routes/auth");
+const dashboardRoutes = require("./routes/dashboardRoute");
 const config = require("./config");
 require("dotenv").config(); // Load environment variables from .env
 
@@ -16,6 +17,7 @@ app.use(bodyParser.json()); // Parse incoming JSON requests
 
 // Mount authentication routes under /api
 app.use("/api", authRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Global error handler (should be after all routes)
 const errorHandler = require("./middlewares/errorHandler");

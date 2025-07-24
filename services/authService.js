@@ -56,7 +56,7 @@ exports.signup = async (body) => {
     domain,
     createdAt: new Date().toISOString(),
     queryCount: 0,
-    queryMax: 3,
+    queryMax: 4,
     verified: false,
   };
   await UserModel.create(user);
