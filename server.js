@@ -2,28 +2,38 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const path = require("path");
 const authRoutes = require("./routes/auth");
 const dashboardRoutes = require("./routes/dashboardRoute");
 const config = require("./config");
 require("dotenv").config(); // Load environment variables from .env
 
 const app = express();
-console.log(config.PORT);
-const PORT = config.PORT || 3005; // Use port from config or default to 3005
+const PORT = config.PORT || 3005;
 
-// Middleware setup
-app.use(cors()); // Enable Cross-Origin Resource Sharing
-app.use(bodyParser.json()); // Parse incoming JSON requests
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
 
-// Mount authentication routes under /api
+// Routes
 app.use("/api", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
-// Global error handler (should be after all routes)
+// Serve React frontend from /build in production
+if (process.env.NODE_ENV === "production") {
+  const buildPath = path.join(__dirname, "build");
+  app.use(express.static(buildPath));
+
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(buildPath, "index.html"));
+  });
+}
+
+// Global error handler
 const errorHandler = require("./middlewares/errorHandler");
 app.use(errorHandler);
 
-// Start the server
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
